@@ -1,9 +1,15 @@
 import os
 import numpy as np
+from graphs import Point, Ray, Segment
 
 ROBOT_SIZE = 5
 END_SIZE = 5
 DIRECTIONS = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+STEP_SIZE = 10
+SENSOR_IDX = [0, 1, 2, 4, 6, 7]
+TARGET_SENSOR_DIRECTION = [0, 2, 4, 6]
+
+TWO_2 = np.sqrt(2) / 2
 
 
 def parseFile(folder):
@@ -41,71 +47,6 @@ def random_face():
     return DIRECTIONS[np.random.randint(len(DIRECTIONS))]
 
 
-# receives a direction and returns the left-side direction
-def turn_left(direction):
-    if direction == (1, 0):
-        return 0, 1
-    elif direction == (0, 1):
-        return -1, 0
-    elif direction == (-1, 0):
-        return 0, -1
-    elif direction == (0, -1):
-        return 1, 0
-    else:
-        raise ValueError("Invalid direction")
-
-
-# receives a direction and returns the left-side direction
-def turn_right(direction):
-    if direction == (1, 0):
-        return 0, -1
-    elif direction == (0, 1):
-        return 1, 0
-    elif direction == (-1, 0):
-        return 0, 1
-    elif direction == (0, -1):
-        return -1, 0
-    else:
-        raise ValueError("Invalid direction")
-
-
-# calculates the distance between a point and a segment
-def distance_point_segment(p_x, p_y, x_0, y_0, x_1, y_1):
-    if x_0 == x_1:
-        line_distance = abs(p_x - x_0)
-    elif y_0 == y_1:
-        line_distance = abs(p_y - y_0)
-    else:
-        m = (y_1 - y_0) / (x_1 - x_0)
-        b = y_0 - m * x_0
-        line_distance = abs(m * p_x - p_y + b) / np.sqrt(m ** 2 + 1)
-
-    left_end_distance = np.sqrt((p_x - x_0) ** 2 + (p_y - y_0) ** 2)
-    right_end_distance = np.sqrt((p_x - x_1) ** 2 + (p_y - y_1) ** 2)
-    return min(line_distance, left_end_distance, right_end_distance)
-
-
-# calculates the length of a ray from point to a line
-def ray_length(p_x, p_y, r_d_x, r_d_1, x_0, y_0, x_1, y_1):
-    if x_0 == x_1:
-        if r_d_x == 0:
-            return np.inf
-        else:
-            return (x_0 - p_x) / r_d_x
-    elif y_0 == y_1:
-        if r_d_1 == 0:
-            return np.inf
-        else:
-            return (y_0 - p_y) / r_d_1
-    else:
-        m = (y_1 - y_0) / (x_1 - x_0)
-        b = y_0 - m * x_0
-        if m * r_d_x - r_d_1 == 0:
-            return np.inf
-        else:
-            return (m * p_x - p_y + b) / (m * r_d_x - r_d_1)
-
-
 class MazeEnv(object):
     def __init__(self, maze_index, time_limit=1000):
         self.maze_index = maze_index
@@ -113,11 +54,116 @@ class MazeEnv(object):
         file = os.path.join("Mazes", f"maze_{maze_index}")
 
         self.start, self.end, self.maze_lines = parseFile(file)
+        self.start = Point(self.start[0], self.start[1])
+        self.end = Point(self.end[0], self.end[1])
+        self.map_wall = []
 
-        self.robot_pos = self.start
-        self.robot_face = random_face()
+        for line in self.maze_lines:
+            self.map_wall.append(Segment(line[0], line[1], line[2], line[3]))
+
+        self.robot_pos = Point(self.start.x, self.start.y)
+        # self.robot_face = random_face()
+        self.robot_face = DIRECTIONS[0]
+
+        self.eight_directions = self.get_eight_directions()
+
         self.time = 0
 
+    def robot_turn_left(self):
+        if self.robot_face == (1, 0):
+            self.robot_face = 0, 1
+        elif self.robot_face == (0, 1):
+            self.robot_face = -1, 0
+        elif self.robot_face == (-1, 0):
+            self.robot_face = 0, -1
+        elif self.robot_face == (0, -1):
+            self.robot_face = 1, 0
+        else:
+            raise ValueError("Invalid direction")
+        self.eight_directions = self.get_eight_directions()
+
+    def robot_turn_right(self):
+        if self.robot_face == (1, 0):
+            self.robot_face = 0, -1
+        elif self.robot_face == (0, 1):
+            self.robot_face = 1, 0
+        elif self.robot_face == (-1, 0):
+            self.robot_face = 0, 1
+        elif self.robot_face == (0, -1):
+            self.robot_face = -1, 0
+        else:
+            raise ValueError("Invalid direction")
+        self.eight_directions = self.get_eight_directions()
+
+    def collision(self):
+        for wall in self.map_wall:
+            if wall.distance(self.robot_pos) < ROBOT_SIZE:
+                return True
+        return False
+
+    def robot_walk_forward(self):
+        self.robot_pos.x += self.robot_face[0] * STEP_SIZE
+        self.robot_pos.y += self.robot_face[1] * STEP_SIZE
+        if self.collision():
+            self.robot_pos.x -= self.robot_face[0] * STEP_SIZE
+            self.robot_pos.y -= self.robot_face[1] * STEP_SIZE
+            return False
+        return True
+
+    def robot_walk_backward(self):
+        self.robot_pos.x -= self.robot_face[0] * STEP_SIZE
+        self.robot_pos.y -= self.robot_face[1] * STEP_SIZE
+        if self.collision():
+            self.robot_pos.x += self.robot_face[0] * STEP_SIZE
+            self.robot_pos.y += self.robot_face[1] * STEP_SIZE
+            return False
+        return True
+
+    def get_eight_directions(self):
+        rotate_matrix = np.array([[TWO_2, -TWO_2], [TWO_2, TWO_2]])
+        current_direction = np.array(self.robot_face)
+        eight_directions = []
+        for i in range(8):
+            eight_directions.append(current_direction)
+            current_direction = rotate_matrix.dot(current_direction)
+        return eight_directions
+
+    '''
+      0
+    1   3
+      2  
+    '''
+    def end_point_direction(self):
+        d = (self.end.x - self.robot_pos.x, self.end.y - self.robot_pos.y)
+        target_sensor_direction = [self.eight_directions[i] for i in TARGET_SENSOR_DIRECTION]
+        target_sensor_angle = []
+        for direction in target_sensor_direction:
+            angle_val = np.arccos(np.dot(d, direction) / (np.linalg.norm(d) * np.linalg.norm(direction)))
+            target_sensor_angle.append(angle_val)
+        print(target_sensor_angle)
+        return np.argmin(target_sensor_angle)
+
+    '''
+            0       .............(face)   
+          1   7
+        2       6
+          3   5 
+            4      
+    '''
+    def observation(self):
+        sensor_rays = [self.robot_pos.create_ray(self.eight_directions[i]) for i in SENSOR_IDX]
+        sensor_vals = []
+        for ray in sensor_rays:
+            walls_distance = [ray.distance(wall) for wall in self.map_wall]
+            sensor_vals.append(min(walls_distance))
+        return sensor_vals, self.end_point_direction()
+
+    def get_angle(self):
+        d = (self.end.x - self.robot_pos.x, self.end.y - self.robot_pos.y)
+        angle = np.arctan2(d[1], d[0])
+        return angle
 
 if __name__ == '__main__':
     env = MazeEnv(55)
+
+    print(env.observation())
