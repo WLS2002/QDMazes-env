@@ -1,5 +1,5 @@
 import pygame
-from MazeEnv import MazeEnv
+from mazeGame import MazeGame
 import sys
 
 ZOOM = 4
@@ -32,7 +32,7 @@ def fresh(env):
 
 if __name__ == '__main__':
 
-    env = MazeEnv(32)
+    env = MazeGame(32)
 
     while True:
 
@@ -42,13 +42,13 @@ if __name__ == '__main__':
             if event.type == pygame.KEYDOWN:
 
                 if event.key == pygame.K_UP:
-                    env.robot_walk_forward()
+                    env.action(2)
                 elif event.key == pygame.K_DOWN:
-                    env.robot_walk_backward()
+                    env.action(3)
                 elif event.key == pygame.K_LEFT:
-                    env.robot_turn_left()
+                    env.action(0)
                 elif event.key == pygame.K_RIGHT:
-                    env.robot_turn_right()
+                    env.action(1)
 
                 print(env.observation())
 

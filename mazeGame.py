@@ -47,7 +47,7 @@ def random_face():
     return DIRECTIONS[np.random.randint(len(DIRECTIONS))]
 
 
-class MazeEnv(object):
+class MazeGame(object):
     def __init__(self, maze_index, time_limit=1000):
         self.maze_index = maze_index
         self.time_limit = time_limit
@@ -61,87 +61,7 @@ class MazeEnv(object):
         for line in self.maze_lines:
             self.map_wall.append(Segment(line[0], line[1], line[2], line[3]))
 
-        self.robot_pos = Point(self.start.x, self.start.y)
-        # self.robot_face = random_face()
-        self.robot_face = DIRECTIONS[0]
-
-        self.eight_directions = self.get_eight_directions()
-
-        self.time = 0
-
-    def robot_turn_left(self):
-        if self.robot_face == (1, 0):
-            self.robot_face = 0, 1
-        elif self.robot_face == (0, 1):
-            self.robot_face = -1, 0
-        elif self.robot_face == (-1, 0):
-            self.robot_face = 0, -1
-        elif self.robot_face == (0, -1):
-            self.robot_face = 1, 0
-        else:
-            raise ValueError("Invalid direction")
-        self.eight_directions = self.get_eight_directions()
-
-    def robot_turn_right(self):
-        if self.robot_face == (1, 0):
-            self.robot_face = 0, -1
-        elif self.robot_face == (0, 1):
-            self.robot_face = 1, 0
-        elif self.robot_face == (-1, 0):
-            self.robot_face = 0, 1
-        elif self.robot_face == (0, -1):
-            self.robot_face = -1, 0
-        else:
-            raise ValueError("Invalid direction")
-        self.eight_directions = self.get_eight_directions()
-
-    def collision(self):
-        for wall in self.map_wall:
-            if wall.distance(self.robot_pos) < ROBOT_SIZE:
-                return True
-        return False
-
-    def robot_walk_forward(self):
-        self.robot_pos.x += self.robot_face[0] * STEP_SIZE
-        self.robot_pos.y += self.robot_face[1] * STEP_SIZE
-        if self.collision():
-            self.robot_pos.x -= self.robot_face[0] * STEP_SIZE
-            self.robot_pos.y -= self.robot_face[1] * STEP_SIZE
-            return False
-        return True
-
-    def robot_walk_backward(self):
-        self.robot_pos.x -= self.robot_face[0] * STEP_SIZE
-        self.robot_pos.y -= self.robot_face[1] * STEP_SIZE
-        if self.collision():
-            self.robot_pos.x += self.robot_face[0] * STEP_SIZE
-            self.robot_pos.y += self.robot_face[1] * STEP_SIZE
-            return False
-        return True
-
-    def get_eight_directions(self):
-        rotate_matrix = np.array([[TWO_2, -TWO_2], [TWO_2, TWO_2]])
-        current_direction = np.array(self.robot_face)
-        eight_directions = []
-        for i in range(8):
-            eight_directions.append(current_direction)
-            current_direction = rotate_matrix.dot(current_direction)
-        return eight_directions
-
-    '''
-      0
-    1   3
-      2  
-    '''
-    def end_point_direction(self):
-        d = (self.end.x - self.robot_pos.x, self.end.y - self.robot_pos.y)
-        target_sensor_direction = [self.eight_directions[i] for i in TARGET_SENSOR_DIRECTION]
-        target_sensor_angle = []
-        for direction in target_sensor_direction:
-            angle_val = np.arccos(np.dot(d, direction) / (np.linalg.norm(d) * np.linalg.norm(direction)))
-            target_sensor_angle.append(angle_val)
-        print(target_sensor_angle)
-        return np.argmin(target_sensor_angle)
+        self.reset()
 
     '''
             0       .............(face)   
@@ -156,14 +76,118 @@ class MazeEnv(object):
         for ray in sensor_rays:
             walls_distance = [ray.distance(wall) for wall in self.map_wall]
             sensor_vals.append(min(walls_distance))
-        return sensor_vals, self.end_point_direction()
+        return {"sensor": sensor_vals, "end_direction": self._end_point_direction()}
 
-    def get_angle(self):
+    def action(self, a):
+        if a == 0:
+            self._robot_turn_left()
+        elif a == 1:
+            self._robot_turn_right()
+        elif a == 2:
+            self._robot_walk_forward()
+        elif a == 3:
+            self._robot_walk_backward()
+        else:
+            raise ValueError("Invalid action")
+        self.time += 1
+
+    def isEnd(self):
+        terminated, truncated = False, False
+        if self.robot_pos.distance(self.end) < 1e-6:
+            terminated = True
+        if self.time >= self.time_limit:
+            truncated = True
+        return terminated, truncated
+
+    def reset(self):
+        self.robot_pos = Point(self.start.x, self.start.y)
+        self.robot_face = DIRECTIONS[0]
+        self.eight_directions = self._get_eight_directions()
+        self.time = 0
+
+    def _robot_turn_left(self):
+        if self.robot_face == (1, 0):
+            self.robot_face = 0, 1
+        elif self.robot_face == (0, 1):
+            self.robot_face = -1, 0
+        elif self.robot_face == (-1, 0):
+            self.robot_face = 0, -1
+        elif self.robot_face == (0, -1):
+            self.robot_face = 1, 0
+        else:
+            raise ValueError("Invalid direction")
+        self.eight_directions = self._get_eight_directions()
+
+    def _robot_turn_right(self):
+        if self.robot_face == (1, 0):
+            self.robot_face = 0, -1
+        elif self.robot_face == (0, 1):
+            self.robot_face = 1, 0
+        elif self.robot_face == (-1, 0):
+            self.robot_face = 0, 1
+        elif self.robot_face == (0, -1):
+            self.robot_face = -1, 0
+        else:
+            raise ValueError("Invalid direction")
+        self.eight_directions = self._get_eight_directions()
+
+    def _collision(self):
+        for wall in self.map_wall:
+            if wall.distance(self.robot_pos) < ROBOT_SIZE:
+                return True
+        return False
+
+    def _robot_walk_forward(self):
+        self.robot_pos.x += self.robot_face[0] * STEP_SIZE
+        self.robot_pos.y += self.robot_face[1] * STEP_SIZE
+        if self._collision():
+            self.robot_pos.x -= self.robot_face[0] * STEP_SIZE
+            self.robot_pos.y -= self.robot_face[1] * STEP_SIZE
+            return False
+        return True
+
+    def _robot_walk_backward(self):
+        self.robot_pos.x -= self.robot_face[0] * STEP_SIZE
+        self.robot_pos.y -= self.robot_face[1] * STEP_SIZE
+        if self._collision():
+            self.robot_pos.x += self.robot_face[0] * STEP_SIZE
+            self.robot_pos.y += self.robot_face[1] * STEP_SIZE
+            return False
+        return True
+
+    def _get_eight_directions(self):
+        rotate_matrix = np.array([[TWO_2, -TWO_2], [TWO_2, TWO_2]])
+        current_direction = np.array(self.robot_face)
+        eight_directions = []
+        for i in range(8):
+            eight_directions.append(current_direction)
+            current_direction = rotate_matrix.dot(current_direction)
+        return eight_directions
+
+    '''
+      0
+    1   3
+      2  
+    '''
+
+    def _end_point_direction(self):
+        if self.robot_pos.distance(self.end) < 1e-6:
+            return -1  # game is end
+
+        d = (self.end.x - self.robot_pos.x, self.end.y - self.robot_pos.y)
+        target_sensor_direction = [self.eight_directions[i] for i in TARGET_SENSOR_DIRECTION]
+        target_sensor_angle = []
+        for direction in target_sensor_direction:
+            angle_val = np.arccos(np.dot(d, direction) / (np.linalg.norm(d) * np.linalg.norm(direction)))
+            target_sensor_angle.append(angle_val)
+        return np.argmin(target_sensor_angle)
+
+    def _get_angle(self):
         d = (self.end.x - self.robot_pos.x, self.end.y - self.robot_pos.y)
         angle = np.arctan2(d[1], d[0])
         return angle
 
-if __name__ == '__main__':
-    env = MazeEnv(55)
 
+if __name__ == '__main__':
+    env = MazeGame(55)
     print(env.observation())
